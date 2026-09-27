@@ -1504,6 +1504,8 @@ _TT_POLY_FP32_DEST = {
     "sigmoid": (),
     "softsign": (),
     "sqrt": (),
+    "tanh": (),
+    "tanhshrink": (),
 }
 _TT_POLY_COPY_REBASE = {}
 _TT_POLY_PRECISION_SPLIT = ("erfinv",)
@@ -1735,6 +1737,16 @@ class _TTPolyGeneratedBF16(TemplateParameter):
             "ckernel_sfpu_softsign.h",
         ),
         (MathOperation.Sqrt, "sqrt", True, True, 32, "None", "ckernel_sfpu_sqrt.h"),
+        (MathOperation.Tanh, "tanh", True, True, 32, "None", "ckernel_sfpu_tanh.h"),
+        (
+            MathOperation.Tanhshrink,
+            "tanhshrink",
+            True,
+            True,
+            8,
+            "RC",
+            "ckernel_sfpu_tanhshrink.h",
+        ),
     ],
 )
 def test_tt_poly_generated_bf16_llk(
