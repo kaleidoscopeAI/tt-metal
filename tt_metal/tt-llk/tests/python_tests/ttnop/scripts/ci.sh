@@ -130,9 +130,12 @@ if [[ -z "$NODEIDS" ]]; then
     # exclusive lock or a parallel worker will delete artifacts out from under itself.
     echo ">> [1/3] compiling"
     started=$SECONDS
+    compile_status=0
     flock "$BUILD_LOCK" \
         python3 -m pytest --compile-producer -n "$JOBS" -q \
-            "${QUIET_ARGS[@]}" "${PYTEST_SIM_ARGS[@]}" "${FILTER_ARGS[@]}" "${TESTS[@]}"
+            "${QUIET_ARGS[@]}" "${PYTEST_SIM_ARGS[@]}" "${FILTER_ARGS[@]}" "${TESTS[@]}" \
+        || compile_status=$?
+    [[ "$compile_status" -le 1 ]] || exit "$compile_status"
     compile_s=$((SECONDS - started))
 
     echo ">> [2/3] collecting"
