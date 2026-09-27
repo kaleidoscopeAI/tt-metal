@@ -1495,6 +1495,7 @@ _TT_POLY_FP32_DEST = {
     "log2": (),
     "logit": (),
     "logsigmoid": (),
+    "multigammaln": ("blackhole", "wormhole"),
     "polygamma": (),
     "relu": (),
     "selu": (),
@@ -1507,6 +1508,7 @@ _TT_POLY_ADAPTER_OPERATIONS = {
     "log10": "log10",
     "logit": "logit",
     "logsigmoid": "logsigmoid",
+    "multigammaln": "tt_poly_aggregate_multigammaln",
 }
 _TT_POLY_NATIVE_ARCHITECTURES = {}
 
@@ -1681,6 +1683,15 @@ class _TTPolyGeneratedBF16(TemplateParameter):
             "ckernel_sfpu_logsigmoid_bf16.h",
         ),
         (
+            None,
+            "multigammaln",
+            True,
+            False,
+            32,
+            "None",
+            "ckernel_sfpu_multigammaln_bf16.h",
+        ),
+        (
             MathOperation.Polygamma,
             "polygamma",
             False,
@@ -1822,6 +1833,12 @@ def _tt_poly_reference_logsigmoid(x):
     )
 
 
+def _tt_poly_reference_multigammaln(x):
+    return getattr(importlib.import_module("torch.special"), "multigammaln")(
+        x.double(), **{"p": 4}
+    )
+
+
 _TT_POLY_FORWARD_REFERENCES = {
     "erfinv": (
         _tt_poly_reference_erfinv,
@@ -1846,6 +1863,12 @@ _TT_POLY_FORWARD_REFERENCES = {
             ("below", -10.0, False, "identity", None),
             ("above", 93.0, True, "constant", 0.0),
         ),
+    ),
+    "multigammaln": (
+        _tt_poly_reference_multigammaln,
+        ((16321, 31560),),
+        (16321, 31559),
+        (),
     ),
 }
 
