@@ -1479,6 +1479,7 @@ _TT_POLY_NATIVE_CALLS = {
 _TT_POLY_FP32_DEST = {
     "acos": (),
     "acosh": ("blackhole", "wormhole"),
+    "asinh": (),
     "atanh": (),
     "cbrt": (),
     "celu": (),
@@ -1510,6 +1511,7 @@ _TT_POLY_FP32_DEST = {
 _TT_POLY_COPY_REBASE = {}
 _TT_POLY_PRECISION_SPLIT = ("erfinv",)
 _TT_POLY_ADAPTER_OPERATIONS = {
+    "asinh": "asinh",
     "hardswish": "hardswish",
     "log10": "log10",
     "logit": "logit",
@@ -1611,6 +1613,15 @@ class _TTPolyGeneratedBF16(TemplateParameter):
             MathOperation.Acosh,
             "acosh",
             True,
+            False,
+            32,
+            "None",
+            "ckernel_sfpu_trigonometry.h",
+        ),
+        (
+            MathOperation.Asinh,
+            "asinh",
+            False,
             False,
             32,
             "None",
@@ -1826,6 +1837,10 @@ def _apply_finite_constants(golden, coordinate, domain_rows):
     return golden
 
 
+def _tt_poly_reference_asinh(x):
+    return getattr(importlib.import_module("torch"), "asinh")(x.double(), **{})
+
+
 def _tt_poly_reference_erfinv(x):
     return getattr(importlib.import_module("torch"), "erfinv")(x.double(), **{})
 
@@ -1896,6 +1911,12 @@ def _tt_poly_reference_relu_min(x):
 
 
 _TT_POLY_FORWARD_REFERENCES = {
+    "asinh": (
+        _tt_poly_reference_asinh,
+        ((0, 1), (128, 32640), (32768, 32769), (32896, 65408)),
+        (),
+        (),
+    ),
     "erfinv": (
         _tt_poly_reference_erfinv,
         ((0, 1), (128, 16256), (32768, 32769), (32896, 49024)),
