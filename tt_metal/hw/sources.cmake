@@ -400,6 +400,9 @@ set(HW_JIT_API_HEADERS
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_target_special_policy.inc
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_zone_gradient_finalize.inc
     inc/api/compute/eltwise_unary/celu_bw_tt_poly_bf16.h
+    ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_exponent_bucket.h
+    ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_exponent_bucket_core.h
+    ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_finite_reciprocal.h
     inc/api/compute/eltwise_unary/elu_bw_tt_poly_bf16.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_cascade_signed_abs.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_asymptotic_exp.inc
@@ -409,7 +412,6 @@ set(HW_JIT_API_HEADERS
     inc/api/compute/eltwise_unary/erf_bw_tt_poly_bf16.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_abs_exp_correction.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_abs_exp_correction_core.h
-    ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_finite_reciprocal.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_exp2.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_exp2_paired.h
     ckernels/common/llk_sfpu/ckernel_sfpu_expm1_bf16.h
