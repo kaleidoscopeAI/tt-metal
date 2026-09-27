@@ -1494,6 +1494,7 @@ _TT_POLY_FP32_DEST = {
     "log10": (),
     "log2": (),
     "logit": (),
+    "logsigmoid": (),
     "polygamma": (),
     "relu": (),
     "selu": (),
@@ -1505,6 +1506,7 @@ _TT_POLY_ADAPTER_OPERATIONS = {
     "hardswish": "hardswish",
     "log10": "log10",
     "logit": "logit",
+    "logsigmoid": "logsigmoid",
 }
 _TT_POLY_NATIVE_ARCHITECTURES = {}
 
@@ -1670,6 +1672,15 @@ class _TTPolyGeneratedBF16(TemplateParameter):
         ),
         (None, "logit", False, False, 32, "None", "ckernel_sfpu_logit_bf16.h"),
         (
+            None,
+            "logsigmoid",
+            False,
+            False,
+            32,
+            "None",
+            "ckernel_sfpu_logsigmoid_bf16.h",
+        ),
+        (
             MathOperation.Polygamma,
             "polygamma",
             False,
@@ -1805,6 +1816,12 @@ def _tt_poly_reference_logit(x):
     return getattr(importlib.import_module("torch"), "logit")(x.double(), **{})
 
 
+def _tt_poly_reference_logsigmoid(x):
+    return getattr(importlib.import_module("torch.nn.functional"), "logsigmoid")(
+        x.double(), **{}
+    )
+
+
 _TT_POLY_FORWARD_REFERENCES = {
     "erfinv": (
         _tt_poly_reference_erfinv,
@@ -1820,6 +1837,16 @@ _TT_POLY_FORWARD_REFERENCES = {
     ),
     "log10": (_tt_poly_reference_log10, ((128, 32640),), (), ()),
     "logit": (_tt_poly_reference_logit, ((128, 16256),), (16255,), ()),
+    "logsigmoid": (
+        _tt_poly_reference_logsigmoid,
+        ((0, 1), (128, 32640), (32768, 32769), (32896, 65408)),
+        (17081, 17082, 17083, 32638, 32639, 49439, 49440, 49441),
+        (
+            ("above", 3.3895313892515355e38, False, "return_class", "pos_zero"),
+            ("below", -10.0, False, "identity", None),
+            ("above", 93.0, True, "constant", 0.0),
+        ),
+    ),
 }
 
 
