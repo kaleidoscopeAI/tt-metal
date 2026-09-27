@@ -1503,6 +1503,7 @@ _TT_POLY_FP32_DEST = {
     "selu": (),
     "sigmoid": (),
     "softsign": (),
+    "sqrt": (),
 }
 _TT_POLY_COPY_REBASE = {}
 _TT_POLY_PRECISION_SPLIT = ("erfinv",)
@@ -1733,6 +1734,7 @@ class _TTPolyGeneratedBF16(TemplateParameter):
             "None",
             "ckernel_sfpu_softsign.h",
         ),
+        (MathOperation.Sqrt, "sqrt", True, True, 32, "None", "ckernel_sfpu_sqrt.h"),
     ],
 )
 def test_tt_poly_generated_bf16_llk(
