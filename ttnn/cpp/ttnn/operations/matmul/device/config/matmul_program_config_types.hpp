@@ -35,6 +35,13 @@ struct MatmulMultiCoreReuseMultiCastProgramConfig {
     std::optional<ttnn::operations::unary::UnaryWithParam> fused_activation;
     bool fuse_batch = true;
     std::optional<CoreRangeSet> allowed_worker_cores = std::nullopt;
+    // When true, factory emits TILE_PACK_ROW_MAJOR to compute + writer kernels so the pack
+    // LLK writes tiles at absolute CB offsets row-first across all N-subblocks, and the
+    // writer reads per-M-row-group. Unlocks multi-row subblocks (out_subblock_h > 1 with
+    // out_subblock_w < per_core_N) by decoupling subblock shape from writer tile order.
+    // Name disambiguates from Layout::ROW_MAJOR (untilized element layout): this flag is
+    // about the ORDER tiles are packed within the output block, not the tensor layout.
+    bool tile_pack_row_major = false;
 };
 
 // 1D mcast matmul program config.
@@ -70,6 +77,8 @@ struct MatmulMultiCoreReuseMultiCast1DProgramConfig {
     // request MUST supply a per-receiver rotation. GCB-backed mcast_in0 instead consumes natural FIFO
     // order and requires this flag to remain false.
     bool stream_in1 = false;
+    // See MatmulMultiCoreReuseMultiCastProgramConfig::tile_pack_row_major.
+    bool tile_pack_row_major = false;
 };
 
 struct MatmulMultiCoreReuseMultiCastDRAMShardedProgramConfig {

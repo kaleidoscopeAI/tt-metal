@@ -342,7 +342,8 @@ static ttnn::device_operation::ProgramArtifacts create_program_mcast_in0_in1_spe
     tt::DataFormat output_data_format,
     bool untilize_out,
     bool row_broadcast_bias = true,
-    CoreCoord sub_device_start_core = {0, 0}) {
+    CoreCoord sub_device_start_core = {0, 0},
+    bool tile_pack_row_major = false) {
     using namespace tt;
     using tt::tt_metal::TensorMemoryLayout;
 
@@ -403,6 +404,8 @@ static ttnn::device_operation::ProgramArtifacts create_program_mcast_in0_in1_spe
     uint32_t bias_aligned_tile_size = tt::align(bias_single_tile_size, dram_alignment);
 
     operations::matmul::utilities::validate_block_sharded_output_batch(output_is_sharded, B, per_core_M, per_core_N);
+    // Canonical TileRowMajor software reload can share same-format out/interm storage,
+    // including when fused bias consumes the partials. Preserve the sharded-geometry gate.
     bool do_not_inplace_interm0_out_CB = output_is_sharded && (per_core_M != out_block_h);
 
     uint32_t in0_block_h = out_block_h;
@@ -749,6 +752,16 @@ static ttnn::device_operation::ProgramArtifacts create_program_mcast_in0_in1_spe
         fp32_dest_acc_en && interm0_data_format == tt::DataFormat::Float32 && bias_tensor.has_value();
     if (bias_reload_alias) {
         mm_kernel_defines["MM_PARTIALS_RELOAD_ALIAS"] = "1";
+    }
+    // TILE_PACK_ROW_MAJOR: compute packs tiles at absolute CB offsets row-first, writer reads
+    // row-major from CB. Mirror the legacy create_program_mcast_in0_in1 emit; the descriptor
+    // path previously silently dropped tile_pack_row_major, causing 10/34 failures in
+    // test_matmul_tile_pack_row_major.py on l1_sharded_out + multi-row subblock combinations.
+    if (tile_pack_row_major) {
+        mm_kernel_defines["TILE_PACK_ROW_MAJOR"] = "1";
+        mm_kernel_in1_sender_writer_defines["TILE_PACK_ROW_MAJOR"] = "1";
+        mm_kernel_in1_receiver_writer_defines["TILE_PACK_ROW_MAJOR"] = "1";
+        mm_kernel_in1_receiver_writer_other_noc_setup_defines["TILE_PACK_ROW_MAJOR"] = "1";
     }
 
     // in1 is the reader of weights/output writer, and we choose to make it use the optimized reader noc
@@ -1973,7 +1986,8 @@ create_program_mcast_in0_in1(
     tt::DataFormat output_data_format,
     bool untilize_out,
     std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler>& fused_op_signaler,
-    bool row_broadcast_bias = true,
+    bool row_broadcast_bias,
+    bool tile_pack_row_major = false,
     CoreCoord sub_device_start_core = {0, 0}) {
     using namespace tt;
     using tt::tt_metal::TensorMemoryLayout;
@@ -2019,6 +2033,8 @@ create_program_mcast_in0_in1(
     const bool output_is_sharded = out_tensor.memory_config().memory_layout() == TensorMemoryLayout::BLOCK_SHARDED;
 
     operations::matmul::utilities::validate_block_sharded_output_batch(output_is_sharded, B, per_core_M, per_core_N);
+    // Canonical TileRowMajor software reload can share same-format out/interm storage,
+    // including when fused bias consumes the partials. Preserve the sharded-geometry gate.
     bool do_not_inplace_interm0_out_CB = output_is_sharded && (per_core_M != out_block_h);
 
     uint32_t in0_block_h = out_block_h;
@@ -2474,11 +2490,10 @@ create_program_mcast_in0_in1(
         // batch args
         (std::uint32_t)M * N  // MtNt
     };
-    if (bias_mesh.has_value()) {
-        in1_receiver_writer_compile_time_args.push_back((std::uint32_t)in1_block_w);
-    } else {
-        in1_receiver_writer_compile_time_args.push_back(0);  // Placeholder; not used
-    }
+    // Always pass in1_block_w (= out_block_w / bias block width). Consumed by the FUSE_BIAS
+    // path as in3_block_w and by the TILE_PACK_ROW_MAJOR path as the row-group stride, so the
+    // value must be populated regardless of which kernel-side flags are set.
+    in1_receiver_writer_compile_time_args.push_back((std::uint32_t)in1_block_w);
     in1_receiver_writer_compile_time_args.push_back((std::uint32_t)(fuse_op && fused_op_signaler->is_reduce_scatter()));
     tt::tt_metal::TensorAccessorArgs(out_tensor).append_to(in1_receiver_writer_compile_time_args);
 
@@ -2542,6 +2557,16 @@ create_program_mcast_in0_in1(
         mm_kernel_in1_sender_writer_defines["OUT_SHARDED"] = "1";
         mm_kernel_in1_receiver_writer_defines["OUT_SHARDED"] = "1";
         mm_kernel_in1_receiver_writer_other_noc_setup_defines["OUT_SHARDED"] = "1";
+    }
+
+    // TILE_PACK_ROW_MAJOR: compute packs tiles at absolute CB offsets row-first, writer reads
+    // per-M-row-group. Must be emitted to both compute and writer sides (sender + both receiver
+    // variants) so their CB consumption orders stay aligned.
+    if (tile_pack_row_major) {
+        mm_kernel_defines["TILE_PACK_ROW_MAJOR"] = "1";
+        mm_kernel_in1_sender_writer_defines["TILE_PACK_ROW_MAJOR"] = "1";
+        mm_kernel_in1_receiver_writer_defines["TILE_PACK_ROW_MAJOR"] = "1";
+        mm_kernel_in1_receiver_writer_other_noc_setup_defines["TILE_PACK_ROW_MAJOR"] = "1";
     }
 
     // Intermediate CB read
@@ -3543,6 +3568,7 @@ matmul_multi_core_reuse_mcast_2d_optimized_(
     auto per_core_M = program_config.per_core_M;
     auto per_core_N = program_config.per_core_N;
     auto transpose_mcast = program_config.transpose_mcast;
+    auto tile_pack_row_major = program_config.tile_pack_row_major;
 
     TT_FATAL(
         operation_attributes.compute_kernel_config.has_value(),
@@ -3732,6 +3758,7 @@ matmul_multi_core_reuse_mcast_2d_optimized_(
         untilize_out,
         fused_op_signaler,
         fused_matmul_bias_row_broadcastable(bias),
+        tile_pack_row_major,
         sub_device_start_core);
 }
 
@@ -3780,6 +3807,7 @@ ttnn::device_operation::ProgramArtifacts MatmulMultiCoreReuseMcast2DProgramFacto
     auto per_core_M = program_config.per_core_M;
     auto per_core_N = program_config.per_core_N;
     auto transpose_mcast = program_config.transpose_mcast;
+    auto tile_pack_row_major = program_config.tile_pack_row_major;
 
     TT_FATAL(
         operation_attributes.compute_kernel_config.has_value(),
@@ -3885,7 +3913,8 @@ ttnn::device_operation::ProgramArtifacts MatmulMultiCoreReuseMcast2DProgramFacto
         output_data_format,
         untilize_out,
         fused_matmul_bias_row_broadcastable(bias),
-        sub_device_start_core);
+        sub_device_start_core,
+        tile_pack_row_major);
 }
 
 ttnn::device_operation::CachedProgram<MatmulMultiCoreReuseMcast2DProgramFactory::shared_variables_t>

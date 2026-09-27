@@ -75,9 +75,15 @@ void kernel_main() {
     constexpr uint32_t MtNt = get_compile_time_arg_val(16);  // if 0
     // Don't need batch; same as batch from READER args
 
+    // Output block width in tiles. Equals out_block_w / in1_per_core_w / the bias block
+    // width. Used by the FUSE_BIAS path for the in3 block, and by the TILE_PACK_ROW_MAJOR
+    // path to compute the row-group size. Always populated by the factory (no
+    // placeholder), so kernels can read it regardless of build flags.
+    constexpr uint32_t in1_block_w = get_compile_time_arg_val(17);
+
 #ifdef FUSE_BIAS
-    // in3 block args
-    constexpr uint32_t in3_block_w = get_compile_time_arg_val(17);
+    // in3 block args — bias width equals in1_block_w.
+    constexpr uint32_t in3_block_w = in1_block_w;
 
     constexpr uint32_t dfb_id_in3 = get_named_compile_time_arg_val("cb_bias");
 #endif

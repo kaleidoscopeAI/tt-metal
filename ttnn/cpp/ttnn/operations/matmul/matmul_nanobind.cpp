@@ -162,7 +162,8 @@ void py_module(nb::module_& mod) {
            bool transpose_mcast,
            std::optional<UnaryWithParam> fused_activation,
            bool fuse_batch,
-           std::optional<CoreRangeSet> allowed_worker_cores) {
+           std::optional<CoreRangeSet> allowed_worker_cores,
+           bool tile_pack_row_major) {
             std::size_t actual_out_block_h = out_block_h.value_or(per_core_M);
             std::size_t actual_out_block_w = out_block_w.value_or(per_core_N);
 
@@ -178,7 +179,8 @@ void py_module(nb::module_& mod) {
                 transpose_mcast,
                 std::move(fused_activation),
                 fuse_batch,
-                std::move(allowed_worker_cores)};
+                std::move(allowed_worker_cores),
+                tile_pack_row_major};
         },
         nb::kw_only(),
         nb::arg("compute_with_storage_grid_size"),
@@ -192,7 +194,8 @@ void py_module(nb::module_& mod) {
         nb::arg("transpose_mcast").noconvert(),
         nb::arg("fused_activation") = nb::none(),
         nb::arg("fuse_batch").noconvert() = true,
-        nb::arg("allowed_worker_cores") = nb::none());
+        nb::arg("allowed_worker_cores") = nb::none(),
+        nb::arg("tile_pack_row_major").noconvert() = false);
 
     matmul_multi_core_reuse_multicast_program_config.def_rw(
         "compute_with_storage_grid_size",
@@ -306,6 +309,15 @@ void py_module(nb::module_& mod) {
         When set, overrides ``compute_with_storage_grid_size`` for determining the active
         compute grid. Accepts a ``CoreRangeSet`` describing the exact cores to use.
     )doc");
+    matmul_multi_core_reuse_multicast_program_config.def_rw(
+        "tile_pack_row_major",
+        &MatmulMultiCoreReuseMultiCastProgramConfig::tile_pack_row_major,
+        R"doc(
+        When true, factory emits TILE_PACK_ROW_MAJOR to compute + writer kernels so the pack
+        LLK writes tiles at absolute CB offsets row-first across all N-subblocks, and the
+        writer reads per-M-row-group. Unlocks multi-row subblocks (out_subblock_h > 1 with
+        out_subblock_w < per_core_N) by decoupling subblock shape from writer tile order.
+    )doc");
     matmul_multi_core_reuse_multicast_program_config.def(
         "__repr__", [](const MatmulMultiCoreReuseMultiCastProgramConfig& config) {
             return fmt::format(
@@ -363,7 +375,8 @@ void py_module(nb::module_& mod) {
                std::size_t num_global_cb_receivers,
                bool untilize_out,
                std::optional<CoreRangeSet> allowed_worker_cores,
-               bool stream_in1) {
+               bool stream_in1,
+               bool tile_pack_row_major) {
                 std::size_t actual_out_block_h = out_block_h.value_or(per_core_M);
                 std::size_t actual_out_block_w = out_block_w.value_or(per_core_N);
 
@@ -384,7 +397,8 @@ void py_module(nb::module_& mod) {
                     num_global_cb_receivers,
                     untilize_out,
                     std::move(allowed_worker_cores),
-                    stream_in1};
+                    stream_in1,
+                    tile_pack_row_major};
             },
             nb::kw_only(),
             nb::arg("compute_with_storage_grid_size"),
@@ -403,7 +417,8 @@ void py_module(nb::module_& mod) {
             nb::arg("num_global_cb_receivers").noconvert() = 1,
             nb::arg("untilize_out").noconvert() = false,
             nb::arg("allowed_worker_cores") = nb::none(),
-            nb::arg("stream_in1").noconvert() = false)
+            nb::arg("stream_in1").noconvert() = false,
+            nb::arg("tile_pack_row_major").noconvert() = false)
         .def_rw(
             "compute_with_storage_grid_size",
             &MatmulMultiCoreReuseMultiCast1DProgramConfig::compute_with_storage_grid_size,
@@ -526,6 +541,12 @@ void py_module(nb::module_& mod) {
             MUST be queued with the ``(weight, block_count, rotation)`` request form. GCB-backed
             mcast_in0 consumes natural FIFO order and requires this flag to remain false.
             Defaults to false.
+        )doc")
+        .def_rw(
+            "tile_pack_row_major",
+            &MatmulMultiCoreReuseMultiCast1DProgramConfig::tile_pack_row_major,
+            R"doc(
+            See MatmulMultiCoreReuseMultiCastProgramConfig::tile_pack_row_major.
         )doc")
         .def("__repr__", [](const MatmulMultiCoreReuseMultiCast1DProgramConfig& config) {
             return fmt::format(
