@@ -1496,6 +1496,7 @@ _TT_POLY_FP32_DEST = {
     "hardswish": (),
     "hardtanh": (),
     "i1": (),
+    "lgamma": (),
     "log10": (),
     "log2": (),
     "logit": (),
@@ -1519,6 +1520,7 @@ _TT_POLY_ADAPTER_OPERATIONS = {
     "hardmish": "hardmish",
     "hardswish": "hardswish",
     "i1": "i1",
+    "lgamma": "lgamma",
     "log10": "log10",
     "logit": "logit",
     "logsigmoid": "logsigmoid",
@@ -1697,6 +1699,15 @@ class _TTPolyGeneratedBF16(TemplateParameter):
             "ckernel_sfpu_hardtanh.h",
         ),
         (MathOperation.I1, "i1", False, False, 32, "None", "ckernel_sfpu_i1.h"),
+        (
+            MathOperation.Lgamma,
+            "lgamma",
+            False,
+            False,
+            32,
+            "None",
+            "ckernel_sfpu_lgamma_bf16.h",
+        ),
         (None, "log10", True, True, 32, "None", "ckernel_sfpu_log.h"),
         (
             MathOperation.LogWithBase,
@@ -1937,6 +1948,10 @@ def _tt_poly_reference_i1(x):
     return getattr(importlib.import_module("torch.special"), "i1")(x.double(), **{})
 
 
+def _tt_poly_reference_lgamma(x):
+    return getattr(importlib.import_module("torch"), "lgamma")(x.double(), **{})
+
+
 def _tt_poly_reference_log10(x):
     return getattr(importlib.import_module("torch"), "log10")(x.double(), **{})
 
@@ -2019,6 +2034,12 @@ _TT_POLY_FORWARD_REFERENCES = {
             ("below", -88.5, True, "constant", -1.1547668213381457e37),
             ("above", 88.5, True, "constant", 1.1547668213381457e37),
         ),
+    ),
+    "lgamma": (
+        _tt_poly_reference_lgamma,
+        ((0, 1), (128, 31813), (32768, 32769), (32896, 65408)),
+        (31812,),
+        (),
     ),
     "log10": (_tt_poly_reference_log10, ((128, 32640),), (), ()),
     "logit": (_tt_poly_reference_logit, ((128, 16256),), (16255,), ()),
