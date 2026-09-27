@@ -1502,6 +1502,7 @@ _TT_POLY_FP32_DEST = {
     "relu_min": (),
     "selu": (),
     "sigmoid": (),
+    "softsign": (),
 }
 _TT_POLY_COPY_REBASE = {}
 _TT_POLY_PRECISION_SPLIT = ("erfinv",)
@@ -1722,6 +1723,15 @@ class _TTPolyGeneratedBF16(TemplateParameter):
             8,
             "RC",
             "ckernel_sfpu_sigmoid.h",
+        ),
+        (
+            MathOperation.Softsign,
+            "softsign",
+            True,
+            True,
+            32,
+            "None",
+            "ckernel_sfpu_softsign.h",
         ),
     ],
 )
