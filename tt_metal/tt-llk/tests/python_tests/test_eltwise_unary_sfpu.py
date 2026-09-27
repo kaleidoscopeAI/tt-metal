@@ -1490,6 +1490,7 @@ _TT_POLY_FP32_DEST = {
     "erfinv": (),
     "exp2": (),
     "expm1": (),
+    "gelu": (),
     "hardsigmoid": (),
     "hardswish": (),
     "hardtanh": (),
@@ -1512,6 +1513,7 @@ _TT_POLY_COPY_REBASE = {}
 _TT_POLY_PRECISION_SPLIT = ("erfinv",)
 _TT_POLY_ADAPTER_OPERATIONS = {
     "asinh": "asinh",
+    "gelu": "gelu",
     "hardswish": "hardswish",
     "log10": "log10",
     "logit": "logit",
@@ -1661,6 +1663,7 @@ class _TTPolyGeneratedBF16(TemplateParameter):
             "None",
             "ckernel_sfpu_expm1.h",
         ),
+        (MathOperation.Gelu, "gelu", False, False, 32, "None", "ckernel_sfpu_gelu.h"),
         (
             MathOperation.Hardsigmoid,
             "hardsigmoid",
@@ -1845,6 +1848,27 @@ def _tt_poly_reference_erfinv(x):
     return getattr(importlib.import_module("torch"), "erfinv")(x.double(), **{})
 
 
+def _tt_poly_reference_gelu(x):
+    def _declared_piece_0(x):
+        import math
+
+        erfc = np.vectorize(math.erfc, otypes=[np.float64])
+        sqrt = np.sqrt
+        return np.broadcast_to(
+            np.asarray(0.5 * x * erfc(-x / sqrt(2)), dtype=np.float64), x.shape
+        )
+
+    def _declared_forward(x):
+        result = np.full(x.shape, np.nan)
+        finite = np.isfinite(x)
+        bins = np.searchsorted((), x, side="right")
+        active = finite & (bins == 0)
+        result[active] = _declared_piece_0(x[active])
+        return result
+
+    return torch.from_numpy(_declared_forward(x.double().numpy()))
+
+
 def _tt_poly_reference_hardswish(x):
     def _declared_piece_0(x):
         return np.broadcast_to(np.asarray(0, dtype=np.float64), x.shape)
@@ -1922,6 +1946,15 @@ _TT_POLY_FORWARD_REFERENCES = {
         ((0, 1), (128, 16256), (32768, 32769), (32896, 49024)),
         (16255, 49023),
         (),
+    ),
+    "gelu": (
+        _tt_poly_reference_gelu,
+        ((0, 1), (128, 32640), (32768, 32769), (32896, 65408)),
+        (16432, 16433, 16434, 49490, 49491, 49492),
+        (
+            ("below", -13.1875, True, "constant", 0.0),
+            ("above", 2.765625, False, "identity", None),
+        ),
     ),
     "hardswish": (
         _tt_poly_reference_hardswish,
