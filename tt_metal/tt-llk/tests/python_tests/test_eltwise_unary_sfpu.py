@@ -1491,6 +1491,7 @@ _TT_POLY_FP32_DEST = {
     "hardsigmoid": (),
     "hardswish": (),
     "hardtanh": (),
+    "log10": (),
     "log2": (),
     "polygamma": (),
     "relu": (),
@@ -1499,7 +1500,7 @@ _TT_POLY_FP32_DEST = {
 }
 _TT_POLY_COPY_REBASE = {}
 _TT_POLY_PRECISION_SPLIT = ("erfinv",)
-_TT_POLY_ADAPTER_OPERATIONS = {"hardswish": "hardswish"}
+_TT_POLY_ADAPTER_OPERATIONS = {"hardswish": "hardswish", "log10": "log10"}
 _TT_POLY_NATIVE_ARCHITECTURES = {}
 
 
@@ -1652,6 +1653,7 @@ class _TTPolyGeneratedBF16(TemplateParameter):
             "None",
             "ckernel_sfpu_hardtanh.h",
         ),
+        (None, "log10", True, True, 32, "None", "ckernel_sfpu_log.h"),
         (
             MathOperation.LogWithBase,
             "log2",
@@ -1789,6 +1791,10 @@ def _tt_poly_reference_hardswish(x):
     return torch.from_numpy(_declared_forward(x.double().numpy()))
 
 
+def _tt_poly_reference_log10(x):
+    return getattr(importlib.import_module("torch"), "log10")(x.double(), **{})
+
+
 _TT_POLY_FORWARD_REFERENCES = {
     "erfinv": (
         _tt_poly_reference_erfinv,
@@ -1802,6 +1808,7 @@ _TT_POLY_FORWARD_REFERENCES = {
         (16447, 16448, 16449, 49215, 49216, 49217),
         (),
     ),
+    "log10": (_tt_poly_reference_log10, ((128, 32640),), (), ()),
 }
 
 
