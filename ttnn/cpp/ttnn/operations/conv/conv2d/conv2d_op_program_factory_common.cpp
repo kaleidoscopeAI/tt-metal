@@ -73,6 +73,7 @@ std::vector<CBInfo> get_cb_info(
     std::vector<CBInfo> cb_info;
     cb_info.reserve(num_cbs);
 
+    // Untilized output keeps tile-format partials physically distinct from the row-major output.
     const bool untilize_out = conv_config.output_layout == Layout::ROW_MAJOR;
 
     // Tile dimensions and data formats
@@ -210,35 +211,68 @@ std::vector<CBInfo> get_cb_info(
             .data_format = weights_df});
     }
 
-    // Matmul partials CB. 1D depthwise compute uses dest-reuse accumulation.
-    //  - Single height block: it reuses out_cb directly for the read-back, so no partials CB
-    //    (the 0-page entry is not emitted).
-    //  - Multiple height blocks, non-coalesced: out_cb is the persistent sharded output and cannot
-    //    double as the dest-reuse scratch across blocks, so allocate a dedicated scratch CB in the
-    //    output data format.
+    // A one-block FIFO wraps independently of the full output allocation. Compatible
+    // tiled outputs can share their tail block; other formats need private storage.
+    const uint32_t out_block_num_tiles = block_config.act_block_h_ntiles * per_core_out_matrix_width_ntiles;
+    const bool can_alias_partials_onto_out = (partial_dtype == output_datatype) && !untilize_out &&
+                                             !is_1d_depthwise_conv && tt::tt_metal::hal::get_arch() != tt::ARCH::QUASAR;
+    const uint32_t matmul_partials_num_pages = is_1d_depthwise_conv ? 0 : out_block_num_tiles;
+    // 1D depthwise dest-reuse scratch (main): a single height block reuses out_cb directly for the
+    // read-back (0-page — matmul_partials_num_pages is already 0 for is_1d_depthwise_conv); multiple
+    // non-coalesced height blocks need a DEDICATED scratch CB in the output data format, because
+    // out_cb is the persistent sharded output and cannot double as the cross-block dest-reuse scratch.
     const bool depthwise_dest_reuse_scratch = is_1d_depthwise_conv &&
                                               sharding_scheme == TensorMemoryLayout::HEIGHT_SHARDED &&
                                               !coalesce_1d_depthwise_kw_reads && num_blocks_act_h > 1;
-    const bool partials_use_output_cb = !untilize_out && partial_dtype == output_datatype && !is_1d_depthwise_conv &&
-                                        tt::tt_metal::hal::get_arch() != tt::ARCH::QUASAR;
-    // This must match the compute kernel's out_block_num_tiles. Both factories pass one full per-core output-width
-    // block to compute, so dedicated partials storage is exactly one output block reused through ordinary CB FIFO
-    // wraparound. When formats allow output aliasing, only the final block of the existing output allocation is used.
-    const uint32_t output_block_num_tiles = block_config.act_block_h_ntiles * per_core_out_matrix_width_ntiles;
     TT_FATAL(
-        is_1d_depthwise_conv || output_block_num_tiles <= per_core_out_ntiles,
+        is_1d_depthwise_conv || out_block_num_tiles <= per_core_out_ntiles,
         "Conv2d output block size {} exceeds the per-core output size {}",
-        output_block_num_tiles,
+        out_block_num_tiles,
         per_core_out_ntiles);
     cb_info.emplace_back(CBInfo{
         .name = Conv2dCb::MATMUL_PARTIALS,
-        .num_pages =
-            depthwise_dest_reuse_scratch ? act_block_num_tiles : (is_1d_depthwise_conv ? 0 : output_block_num_tiles),
+        .num_pages = depthwise_dest_reuse_scratch ? act_block_num_tiles : matmul_partials_num_pages,
         .page_size = depthwise_dest_reuse_scratch ? output_tile_size : partial_tile_size,
-        .is_globally_allocated = partials_use_output_cb,
+        .is_globally_allocated = depthwise_dest_reuse_scratch ? false : can_alias_partials_onto_out,
         .address_offset =
-            partials_use_output_cb ? (per_core_out_ntiles - output_block_num_tiles) * output_tile_size : 0,
+            can_alias_partials_onto_out ? (per_core_out_ntiles - out_block_num_tiles) * output_tile_size : 0,
         .data_format = depthwise_dest_reuse_scratch ? output_df : partial_df});
+
+    // UNTILIZE_STAGING CB: a DISTINCT one-block staging buffer for the SubblockMajor (!packer_l1_acc)
+    // fuse_bias + untilize_out path ONLY.
+    //
+    // History: the kernel used to alias the bias-add output onto matmul_partials_cb (untilize_mode_out_cb_id
+    // == matmul_partials_cb when untilize_out), so the bias-add's reserve_back landed on the same one-block
+    // CB it was reading from BEFORE pop_front → reserve-before-pop circular wait. bf16's byte-slack absorbed
+    // it, but fp32's 2x-wider tiles removed the slack (the former fp32+bias+untilize exclusion).
+    //
+    // For the packs_in_place class (TileRowMajor + packer_l1_acc — the deep-K caller_owns convs, incl.
+    // fp32+bias+untilize) the kernel now does the bias-add IN PLACE into matmul_partials_cb: the matmul did
+    // ONE reserve/push over the whole output block, so the block is fronted at the CB base and (one-block
+    // CB) fifo_wr_ptr wrapped back to that base — the bias-add read-modify-writes it with NO reserve/push/
+    // pop. There is no reserve at all in the bias phase, so the circular wait cannot occur for ANY dtype and
+    // NO staging CB is needed — its full output-block of L1 is recovered for these convs. The untilize phase
+    // reads the biased block from matmul_partials_cb and pops it (see conv_bmm_tilize.cpp bias_in_place).
+    //
+    // The one path that still needs the distinct staging buffer is SubblockMajor bias+untilize
+    // (!packer_l1_acc): there the matmul runs the normal per-subblock FIFO (not in-place) and the SBM
+    // bias-add + reblock_and_untilize consume/produce subblock-major, so the in-place read-modify-write
+    // model does not apply. Sized to ONE output block; 0 pages on every other path (incl. the packs_in_place
+    // bias+untilize convs, which is the L1 recovery). Same data format as partials.
+    //
+    // TileRowMajor (packs_in_place) for bias+untilize is emitted ONLY by the HEIGHT/BLOCK_SHARDED factory's
+    // pin_class_caller_owns gate (packer_l1_acc_en && (has_bias||untilize_out)) — the WIDTH_SHARDED factory
+    // never emits CONV_TILE_PACK_ROW_MAJOR, so its bias+untilize is ALWAYS SubblockMajor and always needs
+    // the staging CB. So the kernel's bias_in_place (which requires TileRowMajor) is true exactly for
+    // (HS||BS) && packer_l1_acc && has_bias && untilize_out; the staging CB is needed on the complement:
+    // untilize_out && enable_bias && (WIDTH_SHARDED || !packer_l1_acc). This MUST match conv_bmm_tilize.cpp's
+    // bias_in_place gate — a mismatch (staging=0 while the kernel expects it) would fault on WS bias+untilize.
+    const bool bias_in_place_recovers_staging = (sharding_scheme != TensorMemoryLayout::WIDTH_SHARDED) && packer_l1_acc;
+    cb_info.emplace_back(CBInfo{
+        .name = Conv2dCb::UNTILIZE_STAGING,
+        .num_pages = (untilize_out && enable_bias && !bias_in_place_recovers_staging) ? out_block_num_tiles : 0,
+        .page_size = partial_tile_size,
+        .data_format = partial_df});
 
     const bool overlap_im2col_cb =
         sharding_scheme == TensorMemoryLayout::BLOCK_SHARDED && conv_input_df == output_df && !skip_act_cb_create;
