@@ -422,6 +422,9 @@ set(HW_JIT_API_HEADERS
     inc/api/compute/eltwise_unary/hardshrink_bw_tt_poly_bf16.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_clamped_affine.h
     inc/api/compute/eltwise_unary/hardsigmoid_bw_tt_poly_bf16.h
+    ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_simple_algebraic.h
+    ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_simple_forward.h
+    inc/api/compute/eltwise_unary/hardswish_tt_poly_bf16.h
     inc/api/compute/eltwise_unary/hardswish_bw_tt_poly_bf16.h
     inc/api/compute/eltwise_unary/hardtanh_bw_tt_poly_bf16.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_log2.h
