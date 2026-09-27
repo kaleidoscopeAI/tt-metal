@@ -412,6 +412,8 @@ set(HW_JIT_API_HEADERS
     inc/api/compute/eltwise_unary/erf_bw_tt_poly_bf16.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_abs_exp_correction.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_abs_exp_correction_core.h
+    ckernels/common/llk_sfpu/ckernel_sfpu_erfinv_bf16.h
+    ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_log_square_factorized_odd.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_exp2.h
     ckernels/common/llk_sfpu/ckernel_sfpu_tt_poly_exp2_paired.h
     ckernels/common/llk_sfpu/ckernel_sfpu_expm1_bf16.h
